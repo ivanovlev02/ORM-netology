@@ -1,46 +1,52 @@
-import sqlalchemy
-from sqlalchemy.orm import sessionmaker
-import json
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from prettytable import PrettyTable
 
-from models import create_tables, Publisher, Sale, Book, Stock, Shop
+from models import Publisher, Sale, Book, Stock
 
 SQLsystem = 'postgresql'
 login = 'postgres'
 password = 'postgres'
-host = '192.168.0.13'
+host = '192.168.0.5'
 port = 5432
-db_name = "netology"
-DSN = f'{SQLsystem}://{login}:{password}@{host}:{port}/{db_name}'
-engine = sqlalchemy.create_engine(DSN)
+db_name = 'book_orm'
+DSN = f'{SQLsystem}://{login}:{password}@{host}/{db_name}'
 
-Session = sessionmaker(bind=engine)
-session = Session()
+engine = create_engine(DSN)
+session = Session(bind=engine)
 
-create_tables(engine)
+def get_shops(s, publisher_input):
+    my_table = PrettyTable()
+    try:
+        publisher_id = int(publisher_input)
+        publisher = (s.query(Publisher).filter(Publisher.id == publisher_id).first())
+    except ValueError:
+        publisher = (s.query(Publisher).filter(Publisher.name == publisher_input).first())
+    
+    if publisher is None:
+        print("Данный издатель не найден")
+    else:
+        sales = (
+            session
+            .query(Sale)
+            .join(Stock)
+            .join(Stock.shop) 
+            .join(Book)
+            .join(Publisher)
+            .filter(Publisher.id == publisher.id)
+            .order_by(Sale.date_sale)
+            .all()
+        )
+        
+        my_table.field_names = ["Название книги", "Название магазина", "Стоимость покупки", "Дата покупки"]
+        for sale in sales:
+            my_table.add_row([sale.stock3.book2.title, sale.stock3.shop.name, sale.price, sale.date_sale])
+        print(my_table)
+        print(f"Найдено {len(sales)} продаж для издателя {publisher.name}")
 
-with open('tests_data.json', 'r') as db:
-    data = json.load(db)
-
-for line in data:
-    method = {
-        'publisher': Publisher,
-        'shop': Shop,
-        'book': Book,
-        'stock': Stock,
-        'sale': Sale,
-    }[line['model']]
-    session.add(method(id=line['pk'], **line.get('fields')))
-
-session.commit()
-
-publ_name = input('Ведите имя писателя или id для вывода: ')
-if publ_name.isnumeric():
-    for c in session.query(Publisher).filter(
-            Publisher.id == int(publ_name)).all():
-        print(c)
-else:
-    for c in session.query(Publisher).filter(
-            Publisher.name.like(f'%{publ_name}%')).all():
-        print(c)
+if __name__ == "__main__":
+    publisher_input = input("Введите имя или идентификатор издателя: ")
+    get_shops(session, publisher_input)
+    
 
 session.close()
